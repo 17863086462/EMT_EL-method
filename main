@@ -1,0 +1,91 @@
+
+                                         
+pixelNum=size(clsAll,2);
+[row,col,bandnum]=size(im);
+windowSOMP=4;
+x_neighbor=cell(1,size(clsAll,2));
+roundnum=1;
+class_num=length(Class_num1);
+load('set.mat');
+maxround=5;  
+EnsemblePredictions=cell(1,maxround);
+while roundnum<=maxround 
+no_of_task=3; 
+dim=bandnum; 
+%feature_selnum=rand(round(0.3*dim));
+tic;
+select_feature=selected_rate*dim;  
+pop=100; 
+gen=1; 
+prob_mut=0.1;     
+p_il = 1; 
+rmp=0.1; 
+tic;
+Tasks=test_function3(dim,set(roundnum).train_set,set(roundnum).test_set,set(roundnum).train_label,set(roundnum).test_label,set(roundnum).test_neighbor);  
+data_MFEA(roundnum)=MFEA(Tasks,pop,gen,rmp,p_il,prob_mut,select_feature,set(roundnum).train_set,set(roundnum).test_set,set(roundnum).train_label,set(roundnum).test_label); 
+toc;
+best_features=data_MFEA(roundnum).bestInd_data; 
+
+fea_subspace(roundnum).index=zeros(no_of_task,select_feature);
+fea_subspace(roundnum).trainset=cell(1,no_of_task);
+fea_subspace(roundnum).testset=cell(1,no_of_task);
+fea_subspace(roundnum).trainlabel=zeros(no_of_task,size(set(roundnum).labeled_set,2)); 
+fea_subspace(roundnum).predict_label=zeros(no_of_task,size(set(roundnum).unlabel_set,2)); 
+final_test_accuary=zeros(1,maxround);
+%while roundnum<=maxround
+    for tasknum=1:no_of_task
+        fea_subspace(roundnum).index(tasknum,:)=find(best_features(tasknum).rnvec);  
+        fea_subspace(roundnum).trainset{tasknum}=set(roundnum).labeled_set(fea_subspace(roundnum).index(tasknum,:),:);
+        fea_subspace(roundnum).testset{tasknum}=set(roundnum).unlabel_set(fea_subspace(roundnum).index(tasknum,:),:);
+        switch tasknum
+            case 1
+                svmModel = svmtrain(set(roundnum).labeled_label',fea_subspace(roundnum).trainset{tasknum}', '-s 0 -t 1 -c 1.2 -g 2.8 -q');
+                [ptrain,acctrain,dec_values1] = svmpredict(set(roundnum).unlabel_label',fea_subspace(roundnum).testset{tasknum}',svmModel);
+                fea_subspace(roundnum).predict_label(1,:) = ptrain';
+                index_all=[set(roundnum).unlabel_index set(roundnum).labeled_index];
+                label_all(index_all)=[fea_subspace(roundnum).predict_label(1,:) set(roundnum).labeled_label]; 
+                fea_subspace(roundnum).sorted_label(1,:)=label_all(1:size(clsAll,2));
+                accuracy=length(find(fea_subspace(roundnum).sorted_label(1,:)==label))/length(label);
+                %accuracy=acctrain(1)/100;
+                fprintf('classifier SVM’s accuracy is %f,\n',accuracy);
+            case 2
+                clsD = ClassificationDiscriminant.fit(fea_subspace(roundnum).trainset{tasknum}',set(roundnum).labeled_label);
+                predict_label   =  predict(clsD, fea_subspace(roundnum).testset{tasknum}');
+                fea_subspace(roundnum).predict_label(2,:) = predict_label;
+                index_all=[set(roundnum).unlabel_index set(roundnum).labeled_index];
+                label_all(index_all)=[fea_subspace(roundnum).predict_label(2,:) set(roundnum).labeled_label]; 
+                fea_subspace(roundnum).sorted_label(2,:)=label_all(1:size(clsAll,2));
+                accuracy=length(find(fea_subspace(roundnum).sorted_label(2,:)==label))/length(label);
+                fprintf('classifier DISCI’s accuracy is %f,\n',accuracy);
+            case 3 
+                knn_classify = ClassificationKNN.fit(fea_subspace(roundnum).trainset{tasknum}',set(roundnum).labeled_label,'NumNeighbors',3);
+                predict_label   =       predict(knn_classify, fea_subspace(roundnum).testset{tasknum}');
+                fea_subspace(roundnum).predict_label(3,:) = predict_label;
+                index_all=[set(roundnum).unlabel_index set(roundnum).labeled_index];
+                label_all(index_all)=[fea_subspace(roundnum).predict_label(3,:) set(roundnum).labeled_label]; 
+                fea_subspace(roundnum).sorted_label(3,:)=label_all(1:size(clsAll,2));
+                accuracy=length(find(fea_subspace(roundnum).sorted_label(3,:)==label))/length(label);
+                fprintf('classifier KNN’s accuracy is %f,\n',accuracy);
+        end  
+    end
+     for j=1:size(set(roundnum).unlabel_set, 2)
+        EnsemblePredictions{roundnum}(j) =  mode(fea_subspace(roundnum).predict_label(:,j));
+     end
+     
+        result(roundnum).inferGis = zeros(row, col);
+      for ii = 1:size(set(roundnum).unlabel_set, 2) %
+            pos = set(roundnum).unlabel_Pos(:, ii); 
+            result(roundnum).inferGis(pos(1),pos(2)) = EnsemblePredictions{roundnum}(ii); 
+      end
+        for ii = 1:length(set(roundnum).labeled_label) 
+            pos = set(roundnum).labeled_Pos(:, (ii));
+            result(roundnum).inferGis(pos(1),pos(2)) = set(roundnum).labeled_label(ii);
+        end
+ 
+     index_all=[set(roundnum).unlabel_index set(roundnum).labeled_index];
+     label_all(index_all)=[EnsemblePredictions{roundnum} set(roundnum).labeled_label]; 
+     result(roundnum).sorted_label(1:size(clsAll,2))=label_all(1:size(clsAll,2));
+end
+
+
+
